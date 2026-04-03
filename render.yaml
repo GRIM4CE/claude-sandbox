@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: chat-app
+    runtime: docker
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3000
