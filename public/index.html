@@ -316,47 +316,36 @@
     }
 
     .react-btn {
-      opacity: 0;
+      display: none;
       font-size: 0.75rem;
       cursor: pointer;
-      background: none;
+      background: rgba(255,255,255,0.1);
       border: none;
-      color: #666;
-      padding: 2px 4px;
-      transition: opacity 0.15s;
+      color: #999;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-top: 4px;
     }
 
-    .message:hover .react-btn {
-      opacity: 1;
+    .message-wrapper.selected .react-btn {
+      display: inline-block;
     }
 
-    .emoji-picker {
+    .react-input {
       display: none;
-      position: absolute;
-      bottom: 100%;
-      background: #16213e;
+      width: 2.5rem;
+      font-size: 1.2rem;
+      background: rgba(255,255,255,0.1);
       border: 1px solid #0f3460;
       border-radius: 8px;
-      padding: 4px;
-      gap: 2px;
-      z-index: 10;
+      text-align: center;
+      padding: 2px;
+      margin-top: 4px;
+      outline: none;
     }
 
-    .emoji-picker.open {
-      display: flex;
-    }
-
-    .emoji-picker button {
-      background: none;
-      border: none;
-      font-size: 1.2rem;
-      cursor: pointer;
-      padding: 4px;
-      border-radius: 4px;
-    }
-
-    .emoji-picker button:hover {
-      background: rgba(255,255,255,0.1);
+    .react-input.open {
+      display: inline-block;
     }
 
     .message-wrapper {
@@ -653,8 +642,6 @@
       }
     });
 
-    const EMOJIS = ["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F525}"];
-
     function addMessage(msg) {
       const isMine = msg.username === myUsername;
       const wrapper = document.createElement("div");
@@ -671,34 +658,50 @@
 
       div.innerHTML = `<div class="meta">${isMine ? "" : escapeHtml(msg.username) + " &middot; "}${time}</div>${escapeHtml(msg.text)}`;
 
-      const reactBtn = document.createElement("button");
-      reactBtn.className = "react-btn";
-      reactBtn.textContent = "+";
-      reactBtn.addEventListener("click", (e) => {
+      // Tap message to show react button
+      div.addEventListener("click", (e) => {
         e.stopPropagation();
-        const picker = wrapper.querySelector(".emoji-picker");
-        picker.classList.toggle("open");
+        document.querySelectorAll(".message-wrapper.selected").forEach((w) => {
+          if (w !== wrapper) w.classList.remove("selected");
+        });
+        wrapper.classList.toggle("selected");
       });
 
-      const picker = document.createElement("div");
-      picker.className = "emoji-picker";
-      EMOJIS.forEach((emoji) => {
-        const btn = document.createElement("button");
-        btn.textContent = emoji;
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          ws.send(JSON.stringify({ type: "react", msgId: msg.msgId, emoji }));
-          picker.classList.remove("open");
-        });
-        picker.appendChild(btn);
+      const reactBtn = document.createElement("button");
+      reactBtn.className = "react-btn";
+      reactBtn.textContent = "+ React";
+      reactBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const input = wrapper.querySelector(".react-input");
+        input.classList.add("open");
+        input.value = "";
+        input.focus();
       });
+
+      const reactInput = document.createElement("input");
+      reactInput.className = "react-input";
+      reactInput.setAttribute("maxlength", "2");
+      reactInput.setAttribute("inputmode", "text");
+      reactInput.addEventListener("input", (e) => {
+        const emoji = reactInput.value.trim();
+        if (emoji && isEmoji(emoji)) {
+          ws.send(JSON.stringify({ type: "react", msgId: msg.msgId, emoji }));
+          reactInput.value = "";
+          reactInput.classList.remove("open");
+          wrapper.classList.remove("selected");
+        }
+      });
+      reactInput.addEventListener("blur", () => {
+        reactInput.classList.remove("open");
+      });
+      reactInput.addEventListener("click", (e) => e.stopPropagation());
 
       const reactionsBar = document.createElement("div");
       reactionsBar.className = "reactions-bar";
 
-      div.appendChild(reactBtn);
       wrapper.appendChild(div);
-      wrapper.appendChild(picker);
+      wrapper.appendChild(reactBtn);
+      wrapper.appendChild(reactInput);
       wrapper.appendChild(reactionsBar);
       messagesInner.appendChild(wrapper);
 
@@ -707,6 +710,11 @@
       }
 
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function isEmoji(str) {
+      const emojiRe = /^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)$/u;
+      return emojiRe.test(str);
     }
 
     function renderReactions(bar, msgId, reactions) {
@@ -769,7 +777,7 @@
     });
 
     document.addEventListener("click", () => {
-      document.querySelectorAll(".emoji-picker.open").forEach((p) => p.classList.remove("open"));
+      document.querySelectorAll(".message-wrapper.selected").forEach((w) => w.classList.remove("selected"));
     });
 
     if (window.visualViewport) {

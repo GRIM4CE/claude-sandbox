@@ -288,8 +288,8 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "react" && username) {
-      const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
-      if (typeof msg.msgId !== "number" || !ALLOWED_EMOJIS.includes(msg.emoji)) return;
+      if (typeof msg.msgId !== "number") return;
+      if (typeof msg.emoji !== "string" || msg.emoji.length === 0 || msg.emoji.length > 2) return;
 
       if (!messageReactions.has(msg.msgId)) {
         messageReactions.set(msg.msgId, {});
