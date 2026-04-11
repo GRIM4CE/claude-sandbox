@@ -332,16 +332,11 @@
     }
 
     .react-input {
-      display: none;
-      width: 2.5rem;
-      font-size: 1.2rem;
-      background: rgba(255,255,255,0.1);
-      border: 1px solid #0f3460;
-      border-radius: 8px;
-      text-align: center;
-      padding: 2px;
-      margin-top: 4px;
-      outline: none;
+      position: absolute;
+      opacity: 0;
+      width: 1px;
+      height: 1px;
+      pointer-events: none;
     }
 
     .react-input.open {
@@ -670,29 +665,28 @@
       const reactBtn = document.createElement("button");
       reactBtn.className = "react-btn";
       reactBtn.textContent = "+ React";
-      reactBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const input = wrapper.querySelector(".react-input");
-        input.classList.add("open");
-        input.value = "";
-        input.focus();
-      });
 
       const reactInput = document.createElement("input");
       reactInput.className = "react-input";
-      reactInput.setAttribute("maxlength", "2");
-      reactInput.setAttribute("inputmode", "text");
-      reactInput.addEventListener("input", (e) => {
-        const emoji = reactInput.value.trim();
-        if (emoji && isEmoji(emoji)) {
-          ws.send(JSON.stringify({ type: "react", msgId: msg.msgId, emoji }));
-          reactInput.value = "";
-          reactInput.classList.remove("open");
+      reactInput.setAttribute("inputmode", "none");
+
+      reactBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        reactInput.value = "";
+        reactInput.focus();
+      });
+
+      reactInput.addEventListener("input", () => {
+        const val = reactInput.value;
+        if (!val) return;
+        // Extract only emoji characters, ignore everything else
+        const emojiMatch = val.match(/(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(\u200D(\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*/u);
+        if (emojiMatch) {
+          ws.send(JSON.stringify({ type: "react", msgId: msg.msgId, emoji: emojiMatch[0] }));
           wrapper.classList.remove("selected");
         }
-      });
-      reactInput.addEventListener("blur", () => {
-        reactInput.classList.remove("open");
+        reactInput.value = "";
+        reactInput.blur();
       });
       reactInput.addEventListener("click", (e) => e.stopPropagation());
 

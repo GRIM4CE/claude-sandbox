@@ -299,21 +299,30 @@ wss.on("connection", (ws) => {
 
     if (msg.type === "react" && username) {
       if (typeof msg.msgId !== "number") return;
-      if (typeof msg.emoji !== "string" || msg.emoji.length === 0 || msg.emoji.length > 2) return;
+      if (typeof msg.emoji !== "string") return;
+      // Only allow a single emoji character (no text)
+      const emojiRe = /^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(\u200D(\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*$/u;
+      if (!emojiRe.test(msg.emoji)) return;
 
       if (!messageReactions.has(msg.msgId)) {
         messageReactions.set(msg.msgId, {});
       }
       const reactions = messageReactions.get(msg.msgId);
-      if (!reactions[msg.emoji]) {
-        reactions[msg.emoji] = new Set();
+
+      // Check if user already has this exact emoji
+      const hadSameEmoji = reactions[msg.emoji] && reactions[msg.emoji].has(username);
+
+      // Remove user's existing reaction on this message (one per user)
+      for (const [existingEmoji, users] of Object.entries(reactions)) {
+        if (users.has(username)) {
+          users.delete(username);
+          if (users.size === 0) delete reactions[existingEmoji];
+        }
       }
 
-      // Toggle: add if not present, remove if already reacted
-      if (reactions[msg.emoji].has(username)) {
-        reactions[msg.emoji].delete(username);
-        if (reactions[msg.emoji].size === 0) delete reactions[msg.emoji];
-      } else {
+      // If they tapped a different emoji, add it. If same emoji, just remove (toggle off).
+      if (!hadSameEmoji) {
+        if (!reactions[msg.emoji]) reactions[msg.emoji] = new Set();
         reactions[msg.emoji].add(username);
       }
 
