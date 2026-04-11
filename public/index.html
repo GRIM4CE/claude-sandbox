@@ -368,7 +368,7 @@
 
     // --- Auth submit ---
     async function handleAuth() {
-      const username = authUsername.value.trim();
+      const username = authUsername.value.trim().toLowerCase();
       const password = authPassword.value;
       authError.textContent = "";
       authSuccess.textContent = "";

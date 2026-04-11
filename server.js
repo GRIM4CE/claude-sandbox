@@ -45,7 +45,7 @@ app.post("/api/register", async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" });
   }
-  const trimmed = username.trim().slice(0, 30);
+  const trimmed = username.trim().slice(0, 30).toLowerCase();
   if (trimmed.length < 2) {
     return res.status(400).json({ error: "Username must be at least 2 characters" });
   }
@@ -55,7 +55,7 @@ app.post("/api/register", async (req, res) => {
 
   try {
     const existing = await pool.query(
-      "SELECT 1 FROM users WHERE LOWER(username) = LOWER($1)", [trimmed]
+      "SELECT 1 FROM users WHERE username = $1", [trimmed]
     );
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: "Username already taken" });
@@ -80,8 +80,8 @@ app.post("/api/login", async (req, res) => {
 
   try {
     const result = await pool.query(
-      "SELECT username, password_hash FROM users WHERE LOWER(username) = LOWER($1)",
-      [username.trim()]
+      "SELECT username, password_hash FROM users WHERE username = $1",
+      [username.trim().toLowerCase()]
     );
     const user = result.rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
@@ -150,7 +150,7 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "join") {
-      username = msg.username.trim().slice(0, 30);
+      username = msg.username.trim().slice(0, 30).toLowerCase();
       if (!username) return;
       clients.set(ws, username);
 
