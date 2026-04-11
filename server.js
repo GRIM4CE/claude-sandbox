@@ -97,8 +97,8 @@ app.get("/healthz", (req, res) => res.send("ok"));
 app.use(express.static(path.join(__dirname, "public")));
 
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20,
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 2,
   message: { error: "Too many attempts, please try again later" },
 });
 
