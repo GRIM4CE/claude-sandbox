@@ -352,6 +352,7 @@
     let myUsername;
     let reconnectDelay = 1000;
     let reconnectTimer = null;
+    let intentionalClose = false;
     let authMode = "login";
 
     // --- Auth tabs ---
@@ -454,6 +455,10 @@
     // --- WebSocket ---
     function connect(username) {
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        intentionalClose = true;
+        ws.close();
+      }
 
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(`${protocol}//${location.host}`);
@@ -482,6 +487,10 @@
       };
 
       ws.onclose = () => {
+        if (intentionalClose) {
+          intentionalClose = false;
+          return;
+        }
         if (myUsername) {
           addSystemMessage(`Disconnected. Reconnecting in ${reconnectDelay / 1000}s...`);
           reconnectTimer = setTimeout(() => {
