@@ -146,8 +146,15 @@
       -webkit-overflow-scrolling: touch;
       padding: 1rem 1.5rem;
       display: flex;
+      flex-direction: column-reverse;
+      gap: 0.5rem;
+    }
+
+    #messages-inner {
+      display: flex;
       flex-direction: column;
       gap: 0.5rem;
+      margin-top: auto;
     }
 
     .message {
@@ -246,7 +253,7 @@
       </aside>
       <div class="chat-main">
         <div class="chat-header">Chat Room</div>
-        <div id="messages"></div>
+        <div id="messages"><div id="messages-inner"></div></div>
         <div class="chat-input">
           <input type="text" id="msg-input" placeholder="Type a message..." maxlength="1000">
           <button id="send-btn">Send</button>
@@ -263,6 +270,7 @@
     const msgInput = document.getElementById("msg-input");
     const sendBtn = document.getElementById("send-btn");
     const messagesDiv = document.getElementById("messages");
+    const messagesInner = document.getElementById("messages-inner");
     const userList = document.getElementById("user-list");
 
     let ws;
@@ -325,7 +333,7 @@
       });
 
       div.innerHTML = `<div class="meta">${isMine ? "" : msg.username + " &middot; "}${time}</div>${escapeHtml(msg.text)}`;
-      messagesDiv.appendChild(div);
+      messagesInner.appendChild(div);
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
@@ -333,7 +341,7 @@
       const div = document.createElement("div");
       div.className = "message system";
       div.textContent = text;
-      messagesDiv.appendChild(div);
+      messagesInner.appendChild(div);
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
@@ -375,6 +383,12 @@
     msgInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendMessage();
     });
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", () => {
+        document.documentElement.style.height = window.visualViewport.height + "px";
+      });
+    }
   </script>
 </body>
 </html>
