@@ -135,7 +135,13 @@ app.post("/api/register", registerLimiter, async (req, res) => {
   }
 });
 
-app.post("/api/login", async (req, res) => {
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  message: { error: "Too many login attempts, please try again later" },
+});
+
+app.post("/api/login", loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" });
