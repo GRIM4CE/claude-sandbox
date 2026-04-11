@@ -269,6 +269,20 @@
       margin-bottom: 2px;
     }
 
+    .status-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+      background: #666;
+    }
+
+    .status-dot.online {
+      background: #4ecca3;
+    }
+
     .message.mine .meta {
       color: #ffcdd2;
     }
@@ -466,6 +480,7 @@
 
     let ws;
     let myUsername;
+    const onlineUsers = new Set();
     let reconnectDelay = 1000;
     let reconnectTimer = null;
     let intentionalClose = false;
@@ -658,7 +673,8 @@
         minute: "2-digit",
       });
 
-      div.innerHTML = `<div class="meta">${isMine ? "" : escapeHtml(msg.username) + " &middot; "}${time}</div>${escapeHtml(msg.text)}`;
+      const statusDot = !isMine ? `<span class="status-dot${onlineUsers.has(msg.username) ? " online" : ""}" data-username="${escapeHtml(msg.username)}"></span>` : "";
+      div.innerHTML = `<div class="meta">${isMine ? "" : statusDot + escapeHtml(msg.username) + " &middot; "}${time}</div>${escapeHtml(msg.text)}`;
 
       // Tap message to show react button
       div.addEventListener("click", (e) => {
@@ -747,11 +763,23 @@
     }
 
     function updateUserList(users) {
+      onlineUsers.clear();
+      users.forEach((u) => onlineUsers.add(u));
+
       userList.innerHTML = "";
       users.forEach((u) => {
         const li = document.createElement("li");
         li.textContent = u;
         userList.appendChild(li);
+      });
+
+      document.querySelectorAll(".status-dot").forEach((dot) => {
+        const name = dot.dataset.username;
+        if (onlineUsers.has(name)) {
+          dot.classList.add("online");
+        } else {
+          dot.classList.remove("online");
+        }
       });
     }
 
