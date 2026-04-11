@@ -67,10 +67,9 @@ app.post("/api/login", async (req, res) => {
   res.json({ username: user.username });
 });
 
-// --- Message history (JSON file, capped at 200) ---
+// --- Message history (JSON file, capped at 20) ---
 const MESSAGES_FILE = path.join(__dirname, "messages.json");
-const MAX_MESSAGES = 200;
-const HISTORY_LIMIT = 20;
+const MAX_MESSAGES = 20;
 
 function loadMessages() {
   try {
@@ -88,26 +87,6 @@ function saveMessage(msg) {
   }
   fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messages));
 }
-
-function clearMessages() {
-  fs.writeFileSync(MESSAGES_FILE, "[]");
-  console.log("Daily cleanup: message history cleared");
-}
-
-// Clear messages once a day at midnight
-function scheduleDailyCleanup() {
-  const now = new Date();
-  const midnight = new Date(now);
-  midnight.setHours(24, 0, 0, 0);
-  const msUntilMidnight = midnight - now;
-
-  setTimeout(() => {
-    clearMessages();
-    setInterval(clearMessages, 24 * 60 * 60 * 1000);
-  }, msUntilMidnight);
-}
-
-scheduleDailyCleanup();
 
 // --- WebSocket chat ---
 const clients = new Map();
@@ -144,8 +123,8 @@ wss.on("connection", (ws) => {
       if (!username) return;
       clients.set(ws, username);
 
-      // Send last 20 messages as history to the joining user
-      const history = loadMessages().slice(-HISTORY_LIMIT);
+      // Send message history to the joining user
+      const history = loadMessages();
       if (history.length > 0) {
         ws.send(JSON.stringify({ type: "history", messages: history }));
       }
