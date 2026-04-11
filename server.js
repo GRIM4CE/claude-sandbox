@@ -4,18 +4,21 @@ const { WebSocketServer } = require("ws");
 const path = require("path");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const { Pool } = require("pg");
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: true } : false,
 });
 
 // --- Database setup ---
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -36,9 +39,14 @@ async function initDb() {
     CREATE TABLE IF NOT EXISTS sessions (
       id SERIAL PRIMARY KEY,
       token VARCHAR(64) UNIQUE NOT NULL,
-      username VARCHAR(30) NOT NULL
+      username VARCHAR(30) NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Clean up expired sessions on startup
+  await pool.query(
+    "DELETE FROM sessions WHERE created_at < NOW() - INTERVAL '7 days'"
+  );
 }
 
 function generateToken() {
@@ -46,6 +54,13 @@ function generateToken() {
 }
 
 async function createSession(username) {
+  // Remove old sessions for this user (limit to 5 active sessions)
+  await pool.query(`
+    DELETE FROM sessions WHERE id IN (
+      SELECT id FROM sessions WHERE username = $1
+      ORDER BY created_at DESC OFFSET 4
+    )
+  `, [username]);
   const token = generateToken();
   await pool.query(
     "INSERT INTO sessions (token, username) VALUES ($1, $2)", [token, username]
@@ -53,34 +68,54 @@ async function createSession(username) {
   return token;
 }
 
+async function validateSession(token) {
+  if (!token || typeof token !== "string") return null;
+  const result = await pool.query(
+    "SELECT username FROM sessions WHERE token = $1 AND created_at > NOW() - INTERVAL '7 days'",
+    [token]
+  );
+  return result.rows.length > 0 ? result.rows[0].username : null;
+}
+
+// --- Middleware ---
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'", "wss:", "ws:"],
+    },
+  },
+}));
 app.use(express.json());
 app.get("/healthz", (req, res) => res.send("ok"));
 app.use(express.static(path.join(__dirname, "public")));
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  message: { error: "Too many attempts, please try again later" },
+});
+
 // --- Auth endpoints ---
 const MAX_MESSAGES = 20;
+const USERNAME_RE = /^[a-z0-9_-]{2,30}$/;
 
-app.post("/api/register", async (req, res) => {
+app.post("/api/register", authLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" });
   }
-  const trimmed = username.trim().slice(0, 30).toLowerCase();
-  if (trimmed.length < 2) {
-    return res.status(400).json({ error: "Username must be at least 2 characters" });
+  const trimmed = String(username).trim().slice(0, 30).toLowerCase();
+  if (!USERNAME_RE.test(trimmed)) {
+    return res.status(400).json({ error: "Username must be 2-30 characters (letters, numbers, - or _)" });
   }
-  if (password.length < 4) {
-    return res.status(400).json({ error: "Password must be at least 4 characters" });
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
   }
 
   try {
-    const existing = await pool.query(
-      "SELECT 1 FROM users WHERE username = $1", [trimmed]
-    );
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ error: "Username already taken" });
-    }
-
     const hash = await bcrypt.hash(password, 10);
     await pool.query(
       "INSERT INTO users (username, password_hash) VALUES ($1, $2)", [trimmed, hash]
@@ -88,12 +123,15 @@ app.post("/api/register", async (req, res) => {
     const token = await createSession(trimmed);
     res.json({ username: trimmed, token });
   } catch (err) {
+    if (err.code === "23505") { // unique constraint violation
+      return res.status(409).json({ error: "Username already taken" });
+    }
     console.error("Register error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/login", authLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" });
@@ -102,7 +140,7 @@ app.post("/api/login", async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT username, password_hash FROM users WHERE username = $1",
-      [username.trim().toLowerCase()]
+      [String(username).trim().toLowerCase()]
     );
     const user = result.rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
@@ -118,25 +156,27 @@ app.post("/api/login", async (req, res) => {
 
 app.post("/api/verify", async (req, res) => {
   const { token } = req.body;
-  if (!token) {
-    return res.status(400).json({ error: "Token required" });
+  const username = await validateSession(token);
+  if (!username) {
+    return res.status(401).json({ error: "Invalid session" });
   }
+  res.json({ username });
+});
 
-  try {
-    const result = await pool.query(
-      "SELECT username FROM sessions WHERE token = $1", [token]
-    );
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: "Invalid session" });
-    }
-    res.json({ username: result.rows[0].username });
-  } catch (err) {
-    console.error("Verify error:", err);
-    res.status(500).json({ error: "Server error" });
+app.post("/api/logout", async (req, res) => {
+  const { token } = req.body;
+  if (token) {
+    await pool.query("DELETE FROM sessions WHERE token = $1", [token]);
   }
+  res.json({ ok: true });
 });
 
 // --- WebSocket chat ---
+const wss = new WebSocketServer({
+  server,
+  maxPayload: 4096,
+});
+
 const clients = new Map();
 
 function broadcast(message) {
@@ -180,6 +220,8 @@ async function saveMessage(username, text, timestamp) {
 wss.on("connection", (ws) => {
   let username = null;
   ws.isAlive = true;
+  let lastMessageTime = 0;
+  let messageCount = 0;
 
   ws.on("pong", () => { ws.isAlive = true; });
 
@@ -192,8 +234,11 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "join") {
-      username = msg.username.trim().slice(0, 30).toLowerCase();
-      if (!username) return;
+      // Authenticate via session token
+      if (typeof msg.token !== "string") { ws.close(); return; }
+      const validUser = await validateSession(msg.token);
+      if (!validUser) { ws.close(); return; }
+      username = validUser;
       clients.set(ws, username);
 
       try {
@@ -210,9 +255,20 @@ wss.on("connection", (ws) => {
     }
 
     if (msg.type === "chat" && username) {
+      // Rate limit: max 5 messages per second
+      const now = Date.now();
+      if (now - lastMessageTime < 1000) {
+        messageCount++;
+        if (messageCount > 5) return;
+      } else {
+        messageCount = 1;
+        lastMessageTime = now;
+      }
+
+      if (typeof msg.text !== "string") return;
       const text = msg.text.trim().slice(0, 1000);
       if (!text) return;
-      const timestamp = Date.now();
+      const timestamp = now;
       const chatMsg = { type: "chat", username, text, timestamp };
 
       try {
@@ -242,6 +298,15 @@ setInterval(() => {
     client.ping();
   }
 }, HEARTBEAT_INTERVAL);
+
+// Clean up expired sessions every hour
+setInterval(async () => {
+  try {
+    await pool.query("DELETE FROM sessions WHERE created_at < NOW() - INTERVAL '7 days'");
+  } catch (err) {
+    console.error("Session cleanup error:", err);
+  }
+}, 60 * 60 * 1000);
 
 const PORT = process.env.PORT || 3000;
 initDb()

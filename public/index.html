@@ -440,7 +440,15 @@
     tryAutoLogin();
 
     // --- Logout ---
-    logoutBtn.addEventListener("click", () => {
+    logoutBtn.addEventListener("click", async () => {
+      const token = localStorage.getItem("chat_token");
+      if (token) {
+        fetch("/api/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        }).catch(() => {});
+      }
       if (ws) ws.close();
       myUsername = null;
       localStorage.removeItem("chat_token");
@@ -465,7 +473,8 @@
 
       ws.onopen = () => {
         reconnectDelay = 1000;
-        ws.send(JSON.stringify({ type: "join", username }));
+        const token = localStorage.getItem("chat_token");
+        ws.send(JSON.stringify({ type: "join", token }));
         authScreen.style.display = "none";
         chatScreen.style.display = "block";
         msgInput.focus();
@@ -518,7 +527,7 @@
         minute: "2-digit",
       });
 
-      div.innerHTML = `<div class="meta">${isMine ? "" : msg.username + " &middot; "}${time}</div>${escapeHtml(msg.text)}`;
+      div.innerHTML = `<div class="meta">${isMine ? "" : escapeHtml(msg.username) + " &middot; "}${time}</div>${escapeHtml(msg.text)}`;
       messagesInner.appendChild(div);
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
