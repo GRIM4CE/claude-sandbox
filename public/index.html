@@ -442,7 +442,10 @@
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
 
-        if (msg.type === "chat") {
+        if (msg.type === "history") {
+          messagesInner.innerHTML = "";
+          msg.messages.forEach((m) => addMessage(m));
+        } else if (msg.type === "chat") {
           addMessage(msg);
         } else if (msg.type === "system") {
           addSystemMessage(msg.text);
