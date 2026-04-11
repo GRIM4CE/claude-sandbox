@@ -333,14 +333,12 @@
 
     .react-input {
       position: absolute;
+      left: -9999px;
       opacity: 0;
-      width: 1px;
-      height: 1px;
-      pointer-events: none;
-    }
-
-    .react-input.open {
-      display: inline-block;
+      width: 0;
+      height: 0;
+      border: none;
+      padding: 0;
     }
 
     .message-wrapper {
@@ -664,11 +662,11 @@
 
       const reactBtn = document.createElement("button");
       reactBtn.className = "react-btn";
-      reactBtn.textContent = "+ React";
+      reactBtn.textContent = "+";
 
       const reactInput = document.createElement("input");
       reactInput.className = "react-input";
-      reactInput.setAttribute("inputmode", "none");
+      reactInput.type = "text";
 
       reactBtn.addEventListener("click", (e) => {
         e.stopPropagation();
