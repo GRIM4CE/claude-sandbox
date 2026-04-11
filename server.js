@@ -43,6 +43,15 @@ async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reactions (
+      id SERIAL PRIMARY KEY,
+      message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      username VARCHAR(30) NOT NULL,
+      emoji TEXT NOT NULL,
+      UNIQUE(message_id, username)
+    )
+  `);
   // Add created_at column if it doesn't exist (for tables created before this migration)
   await pool.query(`
     ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()
@@ -202,18 +211,36 @@ function getOnlineUsers() {
   return Array.from(clients.values());
 }
 
+async function getReactionsForMessages(messageIds) {
+  if (messageIds.length === 0) return {};
+  const result = await pool.query(
+    "SELECT message_id, emoji, username FROM reactions WHERE message_id = ANY($1)",
+    [messageIds]
+  );
+  const reactionsByMsg = {};
+  for (const row of result.rows) {
+    if (!reactionsByMsg[row.message_id]) reactionsByMsg[row.message_id] = {};
+    if (!reactionsByMsg[row.message_id][row.emoji]) reactionsByMsg[row.message_id][row.emoji] = [];
+    reactionsByMsg[row.message_id][row.emoji].push(row.username);
+  }
+  return reactionsByMsg;
+}
+
 async function getRecentMessages() {
   const result = await pool.query(
     "SELECT id, username, text, timestamp FROM messages ORDER BY id DESC LIMIT $1",
     [MAX_MESSAGES]
   );
-  return result.rows.reverse().map((row) => ({
+  const rows = result.rows.reverse();
+  const messageIds = rows.map((r) => r.id);
+  const reactionsByMsg = await getReactionsForMessages(messageIds);
+  return rows.map((row) => ({
     type: "chat",
     msgId: row.id,
     username: row.username,
     text: row.text,
     timestamp: Number(row.timestamp),
-    reactions: messageReactions.get(row.id) || {},
+    reactions: reactionsByMsg[row.id] || {},
   }));
 }
 
@@ -230,8 +257,18 @@ async function saveMessage(username, text, timestamp) {
   return result.rows[0].id;
 }
 
-// In-memory reaction store: msgId -> { emoji -> Set of usernames }
-const messageReactions = new Map();
+async function getReactionsForMessage(msgId) {
+  const result = await pool.query(
+    "SELECT emoji, username FROM reactions WHERE message_id = $1",
+    [msgId]
+  );
+  const reactions = {};
+  for (const row of result.rows) {
+    if (!reactions[row.emoji]) reactions[row.emoji] = [];
+    reactions[row.emoji].push(row.username);
+  }
+  return reactions;
+}
 
 wss.on("connection", (ws) => {
   let username = null;
@@ -304,35 +341,33 @@ wss.on("connection", (ws) => {
       const emojiRe = /^(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(\u200D(\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*$/u;
       if (!emojiRe.test(msg.emoji)) return;
 
-      if (!messageReactions.has(msg.msgId)) {
-        messageReactions.set(msg.msgId, {});
-      }
-      const reactions = messageReactions.get(msg.msgId);
+      try {
+        // Check if user already has this exact emoji on this message
+        const existing = await pool.query(
+          "SELECT emoji FROM reactions WHERE message_id = $1 AND username = $2",
+          [msg.msgId, username]
+        );
+        const hadSameEmoji = existing.rows.length > 0 && existing.rows[0].emoji === msg.emoji;
 
-      // Check if user already has this exact emoji
-      const hadSameEmoji = reactions[msg.emoji] && reactions[msg.emoji].has(username);
+        // Remove user's existing reaction on this message (one per user)
+        await pool.query(
+          "DELETE FROM reactions WHERE message_id = $1 AND username = $2",
+          [msg.msgId, username]
+        );
 
-      // Remove user's existing reaction on this message (one per user)
-      for (const [existingEmoji, users] of Object.entries(reactions)) {
-        if (users.has(username)) {
-          users.delete(username);
-          if (users.size === 0) delete reactions[existingEmoji];
+        // If they tapped a different emoji, add it. If same emoji, just remove (toggle off).
+        if (!hadSameEmoji) {
+          await pool.query(
+            "INSERT INTO reactions (message_id, username, emoji) VALUES ($1, $2, $3)",
+            [msg.msgId, username, msg.emoji]
+          );
         }
-      }
 
-      // If they tapped a different emoji, add it. If same emoji, just remove (toggle off).
-      if (!hadSameEmoji) {
-        if (!reactions[msg.emoji]) reactions[msg.emoji] = new Set();
-        reactions[msg.emoji].add(username);
+        const reactions = await getReactionsForMessage(msg.msgId);
+        broadcast({ type: "reaction", msgId: msg.msgId, reactions });
+      } catch (err) {
+        console.error("Reaction error:", err);
       }
-
-      // Serialize reactions for broadcast
-      const serialized = {};
-      for (const [emoji, users] of Object.entries(reactions)) {
-        serialized[emoji] = Array.from(users);
-      }
-
-      broadcast({ type: "reaction", msgId: msg.msgId, reactions: serialized });
     }
   });
 
