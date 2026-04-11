@@ -26,18 +26,45 @@
       html, body { height: 100dvh; }
     }
 
-    /* Join screen */
-    #join-screen {
+    /* Auth screen */
+    #auth-screen {
       text-align: center;
+      width: 320px;
     }
 
-    #join-screen h1 {
+    #auth-screen h1 {
       font-size: 2rem;
       margin-bottom: 1.5rem;
       color: #e94560;
     }
 
-    #join-screen input {
+    .auth-tabs {
+      display: flex;
+      margin-bottom: 1.5rem;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 2px solid #16213e;
+    }
+
+    .auth-tab {
+      flex: 1;
+      padding: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      background: #16213e;
+      color: #666;
+    }
+
+    .auth-tab.active {
+      background: #e94560;
+      color: #fff;
+    }
+
+    #auth-screen input {
+      display: block;
+      width: 100%;
       padding: 12px 20px;
       font-size: 1rem;
       border: 2px solid #16213e;
@@ -45,17 +72,17 @@
       background: #16213e;
       color: #eee;
       outline: none;
-      width: 280px;
+      margin-bottom: 0.75rem;
     }
 
-    #join-screen input:focus {
+    #auth-screen input:focus {
       border-color: #e94560;
     }
 
-    #join-screen button {
+    #auth-submit {
       display: block;
-      margin: 1rem auto 0;
-      padding: 12px 40px;
+      width: 100%;
+      padding: 12px;
       font-size: 1rem;
       border: none;
       border-radius: 8px;
@@ -63,10 +90,25 @@
       color: #fff;
       cursor: pointer;
       font-weight: 600;
+      margin-top: 0.5rem;
     }
 
-    #join-screen button:hover {
+    #auth-submit:hover {
       background: #c73652;
+    }
+
+    #auth-error {
+      color: #e94560;
+      font-size: 0.85rem;
+      margin-top: 0.75rem;
+      min-height: 1.2em;
+    }
+
+    #auth-success {
+      color: #4ecca3;
+      font-size: 0.85rem;
+      margin-top: 0.75rem;
+      min-height: 1.2em;
     }
 
     /* Chat screen */
@@ -137,6 +179,25 @@
       font-weight: 600;
       font-size: 1.1rem;
       flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chat-header button {
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      border: 1px solid #e94560;
+      border-radius: 6px;
+      background: transparent;
+      color: #e94560;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .chat-header button:hover {
+      background: #e94560;
+      color: #fff;
     }
 
     #messages {
@@ -239,10 +300,17 @@
 </head>
 <body>
 
-  <div id="join-screen">
+  <div id="auth-screen">
     <h1>Chat Room</h1>
-    <input type="text" id="username-input" placeholder="Enter your name..." maxlength="30" autofocus>
-    <button id="join-btn">Join Chat</button>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login">Log In</button>
+      <button class="auth-tab" data-tab="register">Sign Up</button>
+    </div>
+    <input type="text" id="auth-username" placeholder="Username" maxlength="30" autofocus>
+    <input type="password" id="auth-password" placeholder="Password">
+    <button id="auth-submit">Log In</button>
+    <div id="auth-error"></div>
+    <div id="auth-success"></div>
   </div>
 
   <div id="chat-screen">
@@ -252,7 +320,10 @@
         <ul id="user-list"></ul>
       </aside>
       <div class="chat-main">
-        <div class="chat-header">Chat Room</div>
+        <div class="chat-header">
+          <span>Chat Room</span>
+          <button id="logout-btn">Log Out</button>
+        </div>
         <div id="messages"><div id="messages-inner"></div></div>
         <div class="chat-input">
           <input type="text" id="msg-input" placeholder="Type a message..." maxlength="1000">
@@ -263,10 +334,14 @@
   </div>
 
   <script>
-    const joinScreen = document.getElementById("join-screen");
+    const authScreen = document.getElementById("auth-screen");
     const chatScreen = document.getElementById("chat-screen");
-    const usernameInput = document.getElementById("username-input");
-    const joinBtn = document.getElementById("join-btn");
+    const authUsername = document.getElementById("auth-username");
+    const authPassword = document.getElementById("auth-password");
+    const authSubmit = document.getElementById("auth-submit");
+    const authError = document.getElementById("auth-error");
+    const authSuccess = document.getElementById("auth-success");
+    const logoutBtn = document.getElementById("logout-btn");
     const msgInput = document.getElementById("msg-input");
     const sendBtn = document.getElementById("send-btn");
     const messagesDiv = document.getElementById("messages");
@@ -277,7 +352,79 @@
     let myUsername;
     let reconnectDelay = 1000;
     let reconnectTimer = null;
+    let authMode = "login";
 
+    // --- Auth tabs ---
+    document.querySelectorAll(".auth-tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        authMode = tab.dataset.tab;
+        document.querySelectorAll(".auth-tab").forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+        authSubmit.textContent = authMode === "login" ? "Log In" : "Sign Up";
+        authError.textContent = "";
+        authSuccess.textContent = "";
+      });
+    });
+
+    // --- Auth submit ---
+    async function handleAuth() {
+      const username = authUsername.value.trim();
+      const password = authPassword.value;
+      authError.textContent = "";
+      authSuccess.textContent = "";
+
+      if (!username || !password) {
+        authError.textContent = "Please enter a username and password.";
+        return;
+      }
+
+      const endpoint = authMode === "login" ? "/api/login" : "/api/register";
+      try {
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          authError.textContent = data.error;
+          return;
+        }
+
+        if (authMode === "register") {
+          authSuccess.textContent = "Account created! Logging you in...";
+          await new Promise((r) => setTimeout(r, 800));
+        }
+
+        myUsername = data.username;
+        connect(myUsername);
+      } catch {
+        authError.textContent = "Could not reach the server.";
+      }
+    }
+
+    authSubmit.addEventListener("click", handleAuth);
+    authPassword.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleAuth();
+    });
+    authUsername.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") authPassword.focus();
+    });
+
+    // --- Logout ---
+    logoutBtn.addEventListener("click", () => {
+      if (ws) ws.close();
+      myUsername = null;
+      messagesInner.innerHTML = "";
+      chatScreen.style.display = "none";
+      authScreen.style.display = "block";
+      authPassword.value = "";
+      authError.textContent = "";
+      authSuccess.textContent = "";
+    });
+
+    // --- WebSocket ---
     function connect(username) {
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
 
@@ -287,7 +434,7 @@
       ws.onopen = () => {
         reconnectDelay = 1000;
         ws.send(JSON.stringify({ type: "join", username }));
-        joinScreen.style.display = "none";
+        authScreen.style.display = "none";
         chatScreen.style.display = "block";
         msgInput.focus();
       };
@@ -366,18 +513,6 @@
       ws.send(JSON.stringify({ type: "chat", text }));
       msgInput.value = "";
     }
-
-    joinBtn.addEventListener("click", () => {
-      myUsername = usernameInput.value.trim();
-      if (myUsername) connect(myUsername);
-    });
-
-    usernameInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        myUsername = usernameInput.value.trim();
-        if (myUsername) connect(myUsername);
-      }
-    });
 
     sendBtn.addEventListener("click", sendMessage);
     msgInput.addEventListener("keydown", (e) => {

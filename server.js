@@ -2,14 +2,72 @@ const express = require("express");
 const http = require("http");
 const { WebSocketServer } = require("ws");
 const path = require("path");
+const fs = require("fs");
+const bcrypt = require("bcryptjs");
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+app.use(express.json());
 app.get("/healthz", (req, res) => res.send("ok"));
 app.use(express.static(path.join(__dirname, "public")));
 
+// --- User storage (JSON file) ---
+const USERS_FILE = path.join(__dirname, "users.json");
+
+function loadUsers() {
+  try {
+    return JSON.parse(fs.readFileSync(USERS_FILE, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveUsers(users) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+// --- Auth endpoints ---
+app.post("/api/register", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required" });
+  }
+  const trimmed = username.trim().slice(0, 30);
+  if (trimmed.length < 2) {
+    return res.status(400).json({ error: "Username must be at least 2 characters" });
+  }
+  if (password.length < 4) {
+    return res.status(400).json({ error: "Password must be at least 4 characters" });
+  }
+
+  const users = loadUsers();
+  if (users[trimmed.toLowerCase()]) {
+    return res.status(409).json({ error: "Username already taken" });
+  }
+
+  const hash = await bcrypt.hash(password, 10);
+  users[trimmed.toLowerCase()] = { username: trimmed, hash };
+  saveUsers(users);
+  res.json({ username: trimmed });
+});
+
+app.post("/api/login", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required" });
+  }
+
+  const users = loadUsers();
+  const user = users[username.trim().toLowerCase()];
+  if (!user || !(await bcrypt.compare(password, user.hash))) {
+    return res.status(401).json({ error: "Invalid username or password" });
+  }
+  res.json({ username: user.username });
+});
+
+// --- WebSocket chat ---
 const clients = new Map();
 
 function broadcast(message) {
