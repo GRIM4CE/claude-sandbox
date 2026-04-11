@@ -98,6 +98,9 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       connectSrc: ["'self'", "wss:", "ws:"],
+      workerSrc: ["'self'"],
+      manifestSrc: ["'self'"],
+      imgSrc: ["'self'", "data:"],
     },
   },
 }));
