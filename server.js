@@ -211,6 +211,11 @@ function getOnlineUsers() {
   return Array.from(clients.values());
 }
 
+async function getAllUsers() {
+  const result = await pool.query("SELECT username FROM users ORDER BY username");
+  return result.rows.map((r) => r.username);
+}
+
 async function getReactionsForMessages(messageIds) {
   if (messageIds.length === 0) return {};
   const result = await pool.query(
@@ -304,7 +309,8 @@ wss.on("connection", (ws) => {
       }
 
       broadcast({ type: "system", text: `${username} joined the chat` });
-      broadcast({ type: "users", users: getOnlineUsers() });
+      const allUsers = await getAllUsers();
+      broadcast({ type: "users", online: getOnlineUsers(), all: allUsers });
     }
 
     if (msg.type === "chat" && username) {
@@ -371,11 +377,16 @@ wss.on("connection", (ws) => {
     }
   });
 
-  ws.on("close", () => {
+  ws.on("close", async () => {
     if (username) {
       clients.delete(ws);
       broadcast({ type: "system", text: `${username} left the chat` });
-      broadcast({ type: "users", users: getOnlineUsers() });
+      try {
+        const allUsers = await getAllUsers();
+        broadcast({ type: "users", online: getOnlineUsers(), all: allUsers });
+      } catch (err) {
+        broadcast({ type: "users", online: getOnlineUsers(), all: [] });
+      }
     }
   });
 });
