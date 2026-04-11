@@ -256,6 +256,100 @@
       padding: 4px 0;
     }
 
+    .reactions-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .reaction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.1);
+      font-size: 0.75rem;
+      cursor: pointer;
+      border: 1px solid transparent;
+      user-select: none;
+    }
+
+    .reaction-badge.mine {
+      border-color: #e94560;
+    }
+
+    .reaction-badge:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    .reaction-badge .count {
+      font-size: 0.7rem;
+      color: #aaa;
+    }
+
+    .react-btn {
+      opacity: 0;
+      font-size: 0.75rem;
+      cursor: pointer;
+      background: none;
+      border: none;
+      color: #666;
+      padding: 2px 4px;
+      transition: opacity 0.15s;
+    }
+
+    .message:hover .react-btn {
+      opacity: 1;
+    }
+
+    .emoji-picker {
+      display: none;
+      position: absolute;
+      bottom: 100%;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+      padding: 4px;
+      gap: 2px;
+      z-index: 10;
+    }
+
+    .emoji-picker.open {
+      display: flex;
+    }
+
+    .emoji-picker button {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+    }
+
+    .emoji-picker button:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .message-wrapper {
+      position: relative;
+      max-width: 70%;
+    }
+
+    .message-wrapper.mine {
+      align-self: flex-end;
+    }
+
+    .message-wrapper.theirs {
+      align-self: flex-start;
+    }
+
+    .message-wrapper .message {
+      max-width: 100%;
+    }
+
     /* Input area */
     .chat-input {
       display: flex;
@@ -488,6 +582,8 @@
           msg.messages.forEach((m) => addMessage(m));
         } else if (msg.type === "chat") {
           addMessage(msg);
+        } else if (msg.type === "reaction") {
+          updateReactions(msg.msgId, msg.reactions);
         } else if (msg.type === "system") {
           addSystemMessage(msg.text);
         } else if (msg.type === "users") {
@@ -517,9 +613,15 @@
       }
     });
 
+    const EMOJIS = ["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F525}"];
+
     function addMessage(msg) {
-      const div = document.createElement("div");
       const isMine = msg.username === myUsername;
+      const wrapper = document.createElement("div");
+      wrapper.className = `message-wrapper ${isMine ? "mine" : "theirs"}`;
+      wrapper.dataset.msgId = msg.msgId;
+
+      const div = document.createElement("div");
       div.className = `message ${isMine ? "mine" : "theirs"}`;
 
       const time = new Date(msg.timestamp).toLocaleTimeString([], {
@@ -528,8 +630,67 @@
       });
 
       div.innerHTML = `<div class="meta">${isMine ? "" : escapeHtml(msg.username) + " &middot; "}${time}</div>${escapeHtml(msg.text)}`;
-      messagesInner.appendChild(div);
+
+      const reactBtn = document.createElement("button");
+      reactBtn.className = "react-btn";
+      reactBtn.textContent = "+";
+      reactBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const picker = wrapper.querySelector(".emoji-picker");
+        picker.classList.toggle("open");
+      });
+
+      const picker = document.createElement("div");
+      picker.className = "emoji-picker";
+      EMOJIS.forEach((emoji) => {
+        const btn = document.createElement("button");
+        btn.textContent = emoji;
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          ws.send(JSON.stringify({ type: "react", msgId: msg.msgId, emoji }));
+          picker.classList.remove("open");
+        });
+        picker.appendChild(btn);
+      });
+
+      const reactionsBar = document.createElement("div");
+      reactionsBar.className = "reactions-bar";
+
+      div.appendChild(reactBtn);
+      wrapper.appendChild(div);
+      wrapper.appendChild(picker);
+      wrapper.appendChild(reactionsBar);
+      messagesInner.appendChild(wrapper);
+
+      if (msg.reactions) {
+        renderReactions(reactionsBar, msg.msgId, msg.reactions);
+      }
+
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function renderReactions(bar, msgId, reactions) {
+      bar.innerHTML = "";
+      for (const [emoji, users] of Object.entries(reactions)) {
+        const userList = Array.isArray(users) ? users : Array.from(users);
+        if (userList.length === 0) continue;
+        const badge = document.createElement("span");
+        badge.className = "reaction-badge";
+        if (userList.includes(myUsername)) badge.classList.add("mine");
+        badge.innerHTML = `${emoji} <span class="count">${userList.length}</span>`;
+        badge.title = userList.join(", ");
+        badge.addEventListener("click", () => {
+          ws.send(JSON.stringify({ type: "react", msgId, emoji }));
+        });
+        bar.appendChild(badge);
+      }
+    }
+
+    function updateReactions(msgId, reactions) {
+      const wrapper = messagesInner.querySelector(`[data-msg-id="${msgId}"]`);
+      if (!wrapper) return;
+      const bar = wrapper.querySelector(".reactions-bar");
+      if (bar) renderReactions(bar, msgId, reactions);
     }
 
     function addSystemMessage(text) {
@@ -565,6 +726,10 @@
     sendBtn.addEventListener("click", sendMessage);
     msgInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendMessage();
+    });
+
+    document.addEventListener("click", () => {
+      document.querySelectorAll(".emoji-picker.open").forEach((p) => p.classList.remove("open"));
     });
 
     if (window.visualViewport) {

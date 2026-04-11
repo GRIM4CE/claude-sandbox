@@ -194,20 +194,22 @@ function getOnlineUsers() {
 
 async function getRecentMessages() {
   const result = await pool.query(
-    "SELECT username, text, timestamp FROM messages ORDER BY id DESC LIMIT $1",
+    "SELECT id, username, text, timestamp FROM messages ORDER BY id DESC LIMIT $1",
     [MAX_MESSAGES]
   );
   return result.rows.reverse().map((row) => ({
     type: "chat",
+    msgId: row.id,
     username: row.username,
     text: row.text,
     timestamp: Number(row.timestamp),
+    reactions: messageReactions.get(row.id) || {},
   }));
 }
 
 async function saveMessage(username, text, timestamp) {
-  await pool.query(
-    "INSERT INTO messages (username, text, timestamp) VALUES ($1, $2, $3)",
+  const result = await pool.query(
+    "INSERT INTO messages (username, text, timestamp) VALUES ($1, $2, $3) RETURNING id",
     [username, text, timestamp]
   );
   await pool.query(`
@@ -215,7 +217,11 @@ async function saveMessage(username, text, timestamp) {
       SELECT id FROM messages ORDER BY id DESC LIMIT $1
     )
   `, [MAX_MESSAGES]);
+  return result.rows[0].id;
 }
+
+// In-memory reaction store: msgId -> { emoji -> Set of usernames }
+const messageReactions = new Map();
 
 wss.on("connection", (ws) => {
   let username = null;
@@ -269,15 +275,45 @@ wss.on("connection", (ws) => {
       const text = msg.text.trim().slice(0, 1000);
       if (!text) return;
       const timestamp = now;
-      const chatMsg = { type: "chat", username, text, timestamp };
 
+      let msgId;
       try {
-        await saveMessage(username, text, timestamp);
+        msgId = await saveMessage(username, text, timestamp);
       } catch (err) {
         console.error("Message save error:", err);
+        return;
       }
 
-      broadcast(chatMsg);
+      broadcast({ type: "chat", msgId, username, text, timestamp, reactions: {} });
+    }
+
+    if (msg.type === "react" && username) {
+      const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+      if (typeof msg.msgId !== "number" || !ALLOWED_EMOJIS.includes(msg.emoji)) return;
+
+      if (!messageReactions.has(msg.msgId)) {
+        messageReactions.set(msg.msgId, {});
+      }
+      const reactions = messageReactions.get(msg.msgId);
+      if (!reactions[msg.emoji]) {
+        reactions[msg.emoji] = new Set();
+      }
+
+      // Toggle: add if not present, remove if already reacted
+      if (reactions[msg.emoji].has(username)) {
+        reactions[msg.emoji].delete(username);
+        if (reactions[msg.emoji].size === 0) delete reactions[msg.emoji];
+      } else {
+        reactions[msg.emoji].add(username);
+      }
+
+      // Serialize reactions for broadcast
+      const serialized = {};
+      for (const [emoji, users] of Object.entries(reactions)) {
+        serialized[emoji] = Array.from(users);
+      }
+
+      broadcast({ type: "reaction", msgId: msg.msgId, reactions: serialized });
     }
   });
 
