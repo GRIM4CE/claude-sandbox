@@ -27,6 +27,9 @@ function getOnlineUsers() {
 
 wss.on("connection", (ws) => {
   let username = null;
+  ws.isAlive = true;
+
+  ws.on("pong", () => { ws.isAlive = true; });
 
   ws.on("message", (raw) => {
     let msg;
@@ -64,6 +67,15 @@ wss.on("connection", (ws) => {
     }
   });
 });
+
+const HEARTBEAT_INTERVAL = 25000;
+setInterval(() => {
+  for (const client of wss.clients) {
+    if (!client.isAlive) { client.terminate(); continue; }
+    client.isAlive = false;
+    client.ping();
+  }
+}, HEARTBEAT_INTERVAL);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {

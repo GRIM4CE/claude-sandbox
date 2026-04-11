@@ -249,12 +249,17 @@
 
     let ws;
     let myUsername;
+    let reconnectDelay = 1000;
+    let reconnectTimer = null;
 
     function connect(username) {
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
       ws = new WebSocket(`${protocol}//${location.host}`);
 
       ws.onopen = () => {
+        reconnectDelay = 1000;
         ws.send(JSON.stringify({ type: "join", username }));
         joinScreen.style.display = "none";
         chatScreen.style.display = "block";
@@ -274,9 +279,22 @@
       };
 
       ws.onclose = () => {
-        addSystemMessage("Disconnected from server.");
+        if (myUsername) {
+          addSystemMessage(`Disconnected. Reconnecting in ${reconnectDelay / 1000}s...`);
+          reconnectTimer = setTimeout(() => {
+            reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+            connect(myUsername);
+          }, reconnectDelay);
+        }
       };
     }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && myUsername && (!ws || ws.readyState !== WebSocket.OPEN)) {
+        reconnectDelay = 1000;
+        connect(myUsername);
+      }
+    });
 
     function addMessage(msg) {
       const div = document.createElement("div");
