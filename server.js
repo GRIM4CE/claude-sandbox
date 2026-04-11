@@ -67,6 +67,27 @@ app.post("/api/login", async (req, res) => {
   res.json({ username: user.username });
 });
 
+// --- Message history (JSON file, capped at 20) ---
+const MESSAGES_FILE = path.join(__dirname, "messages.json");
+const MAX_MESSAGES = 20;
+
+function loadMessages() {
+  try {
+    return JSON.parse(fs.readFileSync(MESSAGES_FILE, "utf-8"));
+  } catch {
+    return [];
+  }
+}
+
+function saveMessage(msg) {
+  const messages = loadMessages();
+  messages.push(msg);
+  if (messages.length > MAX_MESSAGES) {
+    messages.splice(0, messages.length - MAX_MESSAGES);
+  }
+  fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messages));
+}
+
 // --- WebSocket chat ---
 const clients = new Map();
 
@@ -101,6 +122,13 @@ wss.on("connection", (ws) => {
       username = msg.username.trim().slice(0, 30);
       if (!username) return;
       clients.set(ws, username);
+
+      // Send message history to the joining user
+      const history = loadMessages();
+      if (history.length > 0) {
+        ws.send(JSON.stringify({ type: "history", messages: history }));
+      }
+
       broadcast({ type: "system", text: `${username} joined the chat` });
       broadcast({ type: "users", users: getOnlineUsers() });
     }
@@ -108,12 +136,14 @@ wss.on("connection", (ws) => {
     if (msg.type === "chat" && username) {
       const text = msg.text.trim().slice(0, 1000);
       if (!text) return;
-      broadcast({
+      const chatMsg = {
         type: "chat",
         username,
         text,
         timestamp: Date.now(),
-      });
+      };
+      saveMessage(chatMsg);
+      broadcast(chatMsg);
     }
   });
 
