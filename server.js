@@ -7,6 +7,7 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
+app.get("/healthz", (req, res) => res.send("ok"));
 app.use(express.static(path.join(__dirname, "public")));
 
 const clients = new Map();
