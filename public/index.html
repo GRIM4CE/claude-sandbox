@@ -151,30 +151,29 @@
       overflow: hidden;
     }
 
-    /* Header actions */
-    .chat-header-actions {
+    .chat-header-left {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
 
     .users-icon-btn {
-      width: 36px;
-      height: 36px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
-      border: 1px solid #0f3460;
-      background: rgba(255,255,255,0.05);
-      color: #aaa;
+      border: none;
+      background: rgba(255,255,255,0.15);
+      color: #fff;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 0;
+      flex-shrink: 0;
     }
 
     .users-icon-btn:hover {
-      background: rgba(255,255,255,0.12);
-      color: #fff;
+      background: rgba(255,255,255,0.25);
     }
 
     /* Users overlay */
@@ -529,13 +528,13 @@
     <div class="chat-layout">
       <div class="chat-main">
         <div class="chat-header">
-          <span>Chat Room</span>
-          <div class="chat-header-actions">
+          <div class="chat-header-left">
             <button id="users-btn" class="users-icon-btn" title="Users">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             </button>
-            <button id="logout-btn">Log Out</button>
+            <span>Chat Room</span>
           </div>
+          <button id="logout-btn">Log Out</button>
         </div>
         <div id="messages"><div id="messages-inner"></div></div>
         <div class="chat-input">
