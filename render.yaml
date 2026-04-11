@@ -1,8 +1,10 @@
 services:
   - type: web
     name: chat-app
-    runtime: docker
+    runtime: node
     plan: free
+    buildCommand: npm install
+    startCommand: node server.js
     envVars:
-      - key: PORT
-        value: 3000
+      - key: NODE_ENV
+        value: production
