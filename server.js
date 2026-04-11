@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const { WebSocketServer } = require("ws");
 const path = require("path");
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { Pool } = require("pg");
 
@@ -31,6 +32,25 @@ async function initDb() {
       timestamp BIGINT NOT NULL
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id SERIAL PRIMARY KEY,
+      token VARCHAR(64) UNIQUE NOT NULL,
+      username VARCHAR(30) NOT NULL
+    )
+  `);
+}
+
+function generateToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+async function createSession(username) {
+  const token = generateToken();
+  await pool.query(
+    "INSERT INTO sessions (token, username) VALUES ($1, $2)", [token, username]
+  );
+  return token;
 }
 
 app.use(express.json());
@@ -65,7 +85,8 @@ app.post("/api/register", async (req, res) => {
     await pool.query(
       "INSERT INTO users (username, password_hash) VALUES ($1, $2)", [trimmed, hash]
     );
-    res.json({ username: trimmed });
+    const token = await createSession(trimmed);
+    res.json({ username: trimmed, token });
   } catch (err) {
     console.error("Register error:", err);
     res.status(500).json({ error: "Server error" });
@@ -87,9 +108,30 @@ app.post("/api/login", async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
       return res.status(401).json({ error: "Invalid username or password" });
     }
-    res.json({ username: user.username });
+    const token = await createSession(user.username);
+    res.json({ username: user.username, token });
   } catch (err) {
     console.error("Login error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.post("/api/verify", async (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ error: "Token required" });
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT username FROM sessions WHERE token = $1", [token]
+    );
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: "Invalid session" });
+    }
+    res.json({ username: result.rows[0].username });
+  } catch (err) {
+    console.error("Verify error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });

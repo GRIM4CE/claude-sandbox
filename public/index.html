@@ -398,6 +398,7 @@
         }
 
         myUsername = data.username;
+        localStorage.setItem("chat_token", data.token);
         connect(myUsername);
       } catch {
         authError.textContent = "Could not reach the server.";
@@ -412,10 +413,36 @@
       if (e.key === "Enter") authPassword.focus();
     });
 
+    // --- Auto-login from saved session ---
+    async function tryAutoLogin() {
+      const token = localStorage.getItem("chat_token");
+      if (!token) return;
+
+      try {
+        const res = await fetch("/api/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (!res.ok) {
+          localStorage.removeItem("chat_token");
+          return;
+        }
+        const data = await res.json();
+        myUsername = data.username;
+        connect(myUsername);
+      } catch {
+        // Server unreachable, stay on login screen
+      }
+    }
+
+    tryAutoLogin();
+
     // --- Logout ---
     logoutBtn.addEventListener("click", () => {
       if (ws) ws.close();
       myUsername = null;
+      localStorage.removeItem("chat_token");
       messagesInner.innerHTML = "";
       chatScreen.style.display = "none";
       authScreen.style.display = "block";
