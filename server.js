@@ -43,6 +43,10 @@ async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Add created_at column if it doesn't exist (for tables created before this migration)
+  await pool.query(`
+    ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()
+  `);
   // Clean up expired sessions on startup
   await pool.query(
     "DELETE FROM sessions WHERE created_at < NOW() - INTERVAL '7 days'"
