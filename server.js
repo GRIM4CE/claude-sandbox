@@ -96,17 +96,17 @@ app.use(express.json());
 app.get("/healthz", (req, res) => res.send("ok"));
 app.use(express.static(path.join(__dirname, "public")));
 
-const authLimiter = rateLimit({
+const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 2,
-  message: { error: "Too many attempts, please try again later" },
+  message: { error: "Too many registration attempts, please try again later" },
 });
 
 // --- Auth endpoints ---
 const MAX_MESSAGES = 20;
 const USERNAME_RE = /^[a-z0-9_-]{2,30}$/;
 
-app.post("/api/register", authLimiter, async (req, res) => {
+app.post("/api/register", registerLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" });
@@ -135,7 +135,7 @@ app.post("/api/register", authLimiter, async (req, res) => {
   }
 });
 
-app.post("/api/login", authLimiter, async (req, res) => {
+app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" });
